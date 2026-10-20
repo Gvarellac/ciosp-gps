@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>GPS · Vistoria CIOSP Bagé</title>
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#16202b;--muted:#5b6876;--line:#d5dbe2;--accent:#e09a12;--accent-ink:#2a1a00;--ok:#1f8a4c;--warn:#b4570b;--bad:#b42318;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0f151c;--panel:#17202a;--ink:#e7ecf1;--muted:#9aa7b4;--line:#2b3744;--accent:#f0b03a;--accent-ink:#1c1200;--ok:#4cc27c;--warn:#f0954a;--bad:#f2716a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  padding:max(24px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+main{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.plate{align-self:flex-start;font:500 16px ui-monospace,Menlo,monospace;background:var(--ink);color:var(--panel);border-radius:6px;padding:4px 10px}
+h1{margin:0;font-size:26px;line-height:1.15}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.acc{font:600 44px/1 ui-monospace,Menlo,monospace}
+.acc small{font-size:18px;font-weight:500;color:var(--muted)}
+.q{font-weight:600}.q.ok{color:var(--ok)}.q.warn{color:var(--warn)}.q.bad{color:var(--bad)}
+.coord{font:500 18px ui-monospace,Menlo,monospace;user-select:all;word-break:break-all}
+.muted{color:var(--muted);font-size:15px}
+button,a.btn{min-height:56px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 18px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;text-decoration:none;padding:0 16px;width:100%;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.err{color:var(--bad)}
+</style></head><body><main>
+<span class="plate" id="pid">Ponto</span>
+<h1>Pegar a coordenada exata</h1>
+<p class="muted" style="margin:0">Fique no local onde a câmera será instalada, com o tablet parado. A precisão melhora nos primeiros segundos.</p>
+<section class="card" aria-live="polite">
+  <div class="acc" id="acc">–</div>
+  <div class="q" id="q">Aguardando o GPS…</div>
+  <div class="coord" id="coord"></div>
+  <div class="muted" id="n"></div>
+</section>
+<button class="primary" id="send" type="button" disabled>Enviar para o app de vistoria</button>
+<div class="row"><button id="copy" type="button" disabled>Copiar</button><a class="btn" id="map" href="#" target="_blank" rel="noopener" hidden>Conferir no mapa</a></div>
+<p class="err" id="err" hidden></p>
+<a class="btn" id="back" href="https://claude.ai/artifact/AcM5sTm5VE5SbpgLJBHpsY">Voltar sem enviar</a>
+</main>
+<script>
+(function(){
+  var qs = new URLSearchParams(location.search);
+  var id = (qs.get("p") || "").toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim();
+  var back = qs.get("back") || "";
+  if (!/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(back)) back = "https://claude.ai/artifact/AcM5sTm5VE5SbpgLJBHpsY";
+  document.getElementById("pid").textContent = id || "Ponto não informado";
+  document.getElementById("back").href = back;
+  var best = null, count = 0;
+  function $(x){ return document.getElementById(x); }
+  function show(){
+    if (!best) return;
+    var a = Math.round(best.acc);
+    $("acc").innerHTML = "±" + a + " <small>metros</small>";
+    var q = $("q");
+    if (a <= 10) { q.textContent = "Precisão boa para o cadastro."; q.className = "q ok"; }
+    else if (a <= 30) { q.textContent = "Precisão razoável. Espere mais alguns segundos se puder."; q.className = "q warn"; }
+    else { q.textContent = "Precisão baixa. Vá para céu aberto e aguarde."; q.className = "q bad"; }
+    $("coord").textContent = best.lat.toFixed(6) + ", " + best.lng.toFixed(6);
+    $("n").textContent = count + " leitura" + (count > 1 ? "s" : "") + " · mantendo a mais precisa";
+    $("send").disabled = !id; $("copy").disabled = false;
+    $("map").hidden = false; $("map").href = "https://www.google.com/maps?q=" + best.lat.toFixed(6) + "," + best.lng.toFixed(6);
+  }
+  function fail(msg){ var e = $("err"); e.textContent = msg; e.hidden = false; }
+  if (!id) fail("Abra esta página pelo botão “Pegar GPS aqui” dentro do app, para saber de qual ponto é a coordenada.");
+  if (!("geolocation" in navigator)) { fail("Este navegador não oferece GPS."); return; }
+  navigator.geolocation.watchPosition(function(pos){
+    count++;
+    var c = pos.coords;
+    if (!best || c.accuracy <= best.acc) best = { lat: c.latitude, lng: c.longitude, acc: c.accuracy };
+    show();
+  }, function(e){
+    if (e.code === 1) fail("O acesso à localização foi negado. Libere a localização para este site nas configurações do navegador e recarregue a página.");
+    else if (e.code === 3) fail("O GPS demorou para responder. Verifique se a localização do tablet está ligada.");
+    else fail("Não foi possível obter a localização. Verifique se o GPS do tablet está ligado.");
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+  $("send").addEventListener("click", function(){
+    if (!best || !id) return;
+    location.href = back + "#gps_" + id.replace(/ /g, "") + "_" + best.lat.toFixed(6) + "_" + best.lng.toFixed(6) + "_" + Math.round(best.acc);
+  });
+  $("copy").addEventListener("click", function(){
+    if (!best) return;
+    var t = best.lat.toFixed(6) + ", " + best.lng.toFixed(6);
+    if (navigator.clipboard) navigator.clipboard.writeText(t).then(function(){ $("copy").textContent = "Copiado"; }, function(){});
+  });
+})();
+</script></body></html>
